@@ -34,5 +34,5 @@
       openstack.cloud.network:
         cloud: "{{ cloud_name }}"
         state: absent
-        name: "{{ item }}-net"
+        name: "{{ instance_name }}-{{ item.name }}-net"
       loop: "[ {{ spine }} ] + {{ leaves }}"
