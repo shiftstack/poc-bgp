@@ -1,0 +1,15 @@
+- hosts: localhost
+  gather_facts: false
+  vars:
+    cloud_name: openstack
+  tasks:
+  - name: Create OpenStack networks
+    openstack.cloud.network:
+      cloud: "{{ cloud_name }}"
+      state: absent
+      name: "{{ item }}-net"
+    with_items:
+      - spine
+      - rack1
+      - rack2
+      - rack3

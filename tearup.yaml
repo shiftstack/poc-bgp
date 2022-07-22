@@ -1,0 +1,26 @@
+- hosts: localhost
+  gather_facts: false
+  vars:
+    cloud_name: openstack
+  tasks:
+  - name: Create OpenStack networks
+    openstack.cloud.network:
+      cloud: "{{ cloud_name }}"
+      state: present
+      name: "{{ item }}-net"
+    with_items:
+      - spine
+      - rack1
+      - rack2
+      - rack3
+  
+  - name: Create OpenStack subnet for the spine network
+    openstack.cloud.subnet:
+      cloud: "{{ cloud_name }}"
+      state: present
+      name: "spine-subnet"
+      network_name: "spine-net"
+      cidr: 192.168.0.0/24
+      enable_dhcp: no
+      dns_nameservers:
+        - 10.2.32.1
