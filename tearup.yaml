@@ -2,25 +2,36 @@
   gather_facts: false
   vars:
     cloud_name: openstack
-  tasks:
-  - name: Create OpenStack networks
-    openstack.cloud.network:
-      cloud: "{{ cloud_name }}"
-      state: present
-      name: "{{ item }}-net"
-    with_items:
-      - spine
-      - rack1
-      - rack2
-      - rack3
-  
-  - name: Create OpenStack subnet for the spine network
-    openstack.cloud.subnet:
-      cloud: "{{ cloud_name }}"
-      state: present
-      name: "spine-subnet"
-      network_name: "spine-net"
+    instance_name: poc-bgp
+    external_network: provider_net_shared_2
+    spine:
+      name: spine
       cidr: 192.168.0.0/24
-      enable_dhcp: no
-      dns_nameservers:
-        - 10.2.32.1
+    leaves:
+      - name: rack1
+        cidr: 192.168.10.0/24
+      - name: rack2
+        cidr: 192.168.20.0/24
+      - name: rack3
+        cidr: 192.168.30.0/24
+
+  tasks:
+    - name: Create OpenStack networks
+      openstack.cloud.network:
+        cloud: "{{ cloud_name }}"
+        state: present
+        name: "{{ instance_name }}-{{ item.name }}-net"
+      loop: "[ {{ spine }} ] + {{ leaves }}"
+    
+    - name: Create OpenStack subnets
+      openstack.cloud.subnet:
+        cloud: "{{ cloud_name }}"
+        state: present
+        name: "{{ instance_name }}-{{ item.name }}-subnet"
+        network_name: "{{ instance_name }}-{{ item.name }}-net"
+        cidr: "{{ item.cidr }}"
+        enable_dhcp: yes
+        dns_nameservers:
+          - 10.2.32.1
+        gateway_ip: "{{ item.cidr | ansible.utils.nthhost(1) }}"
+      loop: "[ {{ spine }} ] + {{ leaves }}"
