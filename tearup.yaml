@@ -76,24 +76,10 @@
           - ip_address: "{{ item.cidr | ansible.utils.nthhost(10) }}"
       loop: "{{ leaves }}"
 
-    - name: Build a variable for the Spine network name
-      set_fact:
-        spine_network_name: "{{ instance_name }}-{{ spine.name }}-net"
-
-    - name: Build a variable for the Spine port names
-      set_fact:
-        spine_network_name: "{{ spine_network_name | default([]) }} + "
-      loop: "{{ leaves }}"
-
     - name: Create a fact to list all the NICS for the Spine Gateway VM
       set_fact:
-        #spine_gw_vm_nics: "{{ spine_gw_vm_nics | default({{ instance_name }}-{{ spine.name }}-net) }} + {{ instance_name }}-{{ spine.name }}-gateway-{{ item.name }}-port"
-        spine_gw_vm_nics: "{{ spine_gw_vm_nics | default([{'net-name': spine_network_name}]) + [{'port-name': item }] }}"
-      loop: "{{ spine_port_names }}"
-
-    - debug: msg="{{ spine_gw_vm_nics }}"
-
-    - fail: msg="stop"
+        spine_gw_vm_nics: "{{ spine_gw_vm_nics | default([{'net-name': (instance_name + '-' + spine.name + '-net' )}]) + [{'port-name': (instance_name + '-' + spine.name + '-gateway-' + item.name + '-port')}] }}"
+      loop: "{{ leaves }}"
 
     - name: Create the Spine Gateway VM
       openstack.cloud.server:
