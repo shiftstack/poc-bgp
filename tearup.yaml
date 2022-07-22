@@ -37,7 +37,7 @@
         cloud: "{{ cloud_name }}"
         name: "{{ instance_name }}-sg"
 
-    - name: Create OpenStack Security Group rule to allow SSH
+    - name: Create the OpenStack Security Group rule to allow SSH
       openstack.cloud.security_group_rule:
         cloud: "{{ cloud_name }}"
         security_group: "{{ instance_name }}-sg"
@@ -45,7 +45,7 @@
         port_range_min: 22
         port_range_max: 22
 
-    - name: Create OpenStack Security Group rule to allow BGP peering
+    - name: Create the OpenStack Security Group rule to allow BGP peering
       openstack.cloud.security_group_rule:
         cloud: "{{ cloud_name }}"
         security_group: "{{ instance_name }}-sg"
@@ -53,13 +53,13 @@
         port_range_min: 179
         port_range_max: 179
 
-    - name: Create OpenStack Security Group rule to allow ICMP
+    - name: Create the OpenStack Security Group rule to allow ICMP
       openstack.cloud.security_group_rule:
         cloud: "{{ cloud_name }}"
         security_group: "{{ instance_name }}-sg"
         protocol: icmp
 
-    - name: Create OpenStack Security Group rule to allow DNS
+    - name: Create the OpenStack Security Group rule to allow DNS
       openstack.cloud.security_group_rule:
         cloud: "{{ cloud_name }}"
         security_group: "{{ instance_name }}-sg"
@@ -88,7 +88,7 @@
         image: "{{ image }}"
         key_name: "{{ keypair | mandatory }}"
         security_groups:
-          - "{{ {{ instance_name }}-sg }}"
-        delete_fip: yes
+          - "{{ instance_name }}-sg"
         flavor: "{{ flavor }}"
         nics: "{{ spine_gw_vm_nics }}"
+        timeout: 300
