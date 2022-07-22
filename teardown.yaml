@@ -1,15 +1,38 @@
 - hosts: localhost
   gather_facts: false
-  vars:
-    cloud_name: openstack
+
   tasks:
-  - name: Create OpenStack networks
-    openstack.cloud.network:
-      cloud: "{{ cloud_name }}"
-      state: absent
-      name: "{{ item }}-net"
-    with_items:
-      - spine
-      - rack1
-      - rack2
-      - rack3
+    - name: Load variables
+      ansible.builtin.include_vars: vars.yaml
+
+    - name: Delete the Spine Gateway VM
+      openstack.cloud.server:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-{{ spine.name }}-gateway"
+        state: absent
+
+    - name: Delete the OpenStack Security Group
+      openstack.cloud.security_group:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-sg"
+        state: absent
+
+    - name: Delete the Spine Gateway VM ports connected to the leaves
+      openstack.cloud.port:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-spine-gateway-{{ item.name }}-port"
+        state: absent
+      loop: "{{ leaves }}"
+
+    - name: Delete the OpenStack external router
+      openstack.cloud.router:
+        cloud: "{{ cloud_name }}"
+        state: absent
+        name: "{{ instance_name }}-external-router"
+
+    - name: Delete the OpenStack networks
+      openstack.cloud.network:
+        cloud: "{{ cloud_name }}"
+        state: absent
+        name: "{{ item }}-net"
+      loop: "[ {{ spine }} ] + {{ leaves }}"
