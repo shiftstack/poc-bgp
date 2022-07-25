@@ -5,11 +5,26 @@
     - name: Load variables
       ansible.builtin.include_vars: vars.yaml
 
-    - name: Delete the Spine Gateway VM
+    - name: Delete all gateway VMs
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-{{ spine.name }}-gateway"
+        name: "{{ instance_name }}-{{ item.name }}-gateway"
         state: absent
+      loop: "{{ all_networks }}"
+      async: 600
+      poll: 0
+      register: delete_vms
+
+    - name: Wait for gateway VM deletion
+      async_status:
+        jid: "{{ delete_vm.ansible_job_id }}"
+      loop: "{{ delete_vms.results }}"
+      loop_control:
+        loop_var: delete_vm
+      register: job_result
+      until: job_result.finished
+      retries: 30
+      delay: 20
 
     - name: Delete the OpenStack external router
       openstack.cloud.router:

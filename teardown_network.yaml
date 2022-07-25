@@ -23,12 +23,6 @@
     loop_control:
       loop_var: port
 
-  - name: Delete {{ item.name }} subnet
-    openstack.cloud.subnet:
-      cloud: "{{ cloud_name }}"
-      name: "{{ instance_name }}-{{ item.name }}-subnet"
-      state: absent
-
   - name: Delete {{ item.name }} network
     openstack.cloud.network:
       cloud: "{{ cloud_name }}"
