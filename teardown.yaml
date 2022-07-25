@@ -11,12 +11,6 @@
         name: "{{ instance_name }}-{{ spine.name }}-gateway"
         state: absent
 
-    - name: Delete the OpenStack Security Group
-      openstack.cloud.security_group:
-        cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-sg"
-        state: absent
-
     - name: Delete the OpenStack external router
       openstack.cloud.router:
         cloud: "{{ cloud_name }}"

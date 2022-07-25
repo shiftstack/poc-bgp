@@ -11,7 +11,7 @@
         state: present
         name: "{{ instance_name }}-{{ item.name }}-net"
       loop: "{{ all_networks }}"
-    
+
     - name: Create OpenStack subnets
       openstack.cloud.subnet:
         cloud: "{{ cloud_name }}"
@@ -32,63 +32,83 @@
         interfaces:
           - "{{ instance_name }}-{{ spine.name }}-subnet"
 
-    - name: Create the OpenStack Security Group
-      openstack.cloud.security_group:
-        cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-sg"
-
-    - name: Create the OpenStack Security Group rule to allow SSH
-      openstack.cloud.security_group_rule:
-        cloud: "{{ cloud_name }}"
-        security_group: "{{ instance_name }}-sg"
-        protocol: tcp
-        port_range_min: 22
-        port_range_max: 22
-
-    - name: Create the OpenStack Security Group rule to allow BGP peering
-      openstack.cloud.security_group_rule:
-        cloud: "{{ cloud_name }}"
-        security_group: "{{ instance_name }}-sg"
-        protocol: tcp
-        port_range_min: 179
-        port_range_max: 179
-
-    - name: Create the OpenStack Security Group rule to allow ICMP
-      openstack.cloud.security_group_rule:
-        cloud: "{{ cloud_name }}"
-        security_group: "{{ instance_name }}-sg"
-        protocol: icmp
-
-    - name: Create the OpenStack Security Group rule to allow DNS
-      openstack.cloud.security_group_rule:
-        cloud: "{{ cloud_name }}"
-        security_group: "{{ instance_name }}-sg"
-        protocol: udp
-        port_range_min: 53
-        port_range_max: 53
-
-    - name: Create the Spine Gateway VM ports connected to the leaves
+    - name: Create VM ports on the spine network
       openstack.cloud.port:
         cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-{{ spine.name }}-gateway-{{ item.name }}-port"
+        name: "{{ instance_name }}-{{ item.name }}-spine-port"
+        network: "{{ instance_name }}-{{ spine.name }}-net"
+        fixed_ips:
+          - ip_address: "{{ item.spine_ip }}"
+        port_security_enabled: false
+      loop: "{{ all_networks }}"
+      register: spine_ports_result
+
+    - name: Create map of network name to spine port uuid
+      set_fact:
+        spine_ports: '{{ dict(spine_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
+
+    - name: Create VM ports on leaf networks
+      openstack.cloud.port:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-{{ item.name }}-leaf-port"
         network: "{{ instance_name }}-{{ item.name }}-net"
         fixed_ips:
-          - ip_address: "{{ item.cidr | ansible.utils.nthhost(10) }}"
+          - ip_address: "{{ item.cidr | ansible.utils.nthhost(1) }}"
+        port_security_enabled: false
       loop: "{{ leaves }}"
+      register: leaf_ports_result
 
-    - name: Create a fact to list all the NICS for the Spine Gateway VM
+    - name: Create map of network name to leaf port uuid
       set_fact:
-        spine_gw_vm_nics: "{{ spine_gw_vm_nics | default([{'net-name': (instance_name + '-' + spine.name + '-net' )}]) + [{'port-name': (instance_name + '-' + spine.name + '-gateway-' + item.name + '-port')}] }}"
-      loop: "{{ leaves }}"
+        leaf_ports: '{{ dict(leaf_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
 
-    - name: Create the Spine Gateway VM
+    - name: Create the spine gateway VM
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
         name: "{{ instance_name }}-{{ spine.name }}-gateway"
         image: "{{ image }}"
         key_name: "{{ keypair | mandatory }}"
-        security_groups:
-          - "{{ instance_name }}-sg"
         flavor: "{{ flavor }}"
-        nics: "{{ spine_gw_vm_nics }}"
-        timeout: 300
+        nics: "{{ [ { 'port-id': spine_ports['spine'] } ] }}" # Spine was the first VM port we created
+        auto_ip: false
+        security_groups: []
+        timeout: 600
+      async: 600
+      poll: 0
+      register: spine_vm_create
+
+    - name: Create the leaf gateway VMs
+      openstack.cloud.server:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-{{ item.name }}-gateway"
+        image: "{{ image }}"
+        key_name: "{{ keypair | mandatory }}"
+        flavor: "{{ flavor }}"
+        nics: "{{ [ {'port-id': spine_ports[item.name] },
+                    {'port-id': leaf_ports[item.name] } ] }}"
+        auto_ip: false
+        security_groups: []
+        timeout: 600
+      loop: "{{ leaves }}"
+      async: 600
+      poll: 0
+      register: leaf_vm_create
+
+    - name: Wait for spine gateway VM creation
+      async_status:
+        jid: "{{ spine_vm_create.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 20
+      delay: 30
+
+    - name: Wait for leaf gateway VMs creation
+      async_status:
+        jid: "{{ async_result_item.ansible_job_id }}"
+      loop: "{{ leaf_vm_create.results }}"
+      loop_control:
+        loop_var: async_result_item
+      register: job_result
+      until: job_result.finished
+      retries: 20
+      delay: 30
