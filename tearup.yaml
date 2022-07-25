@@ -97,10 +97,58 @@
     - name: Wait for spine gateway VM creation
       async_status:
         jid: "{{ spine_vm_create.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      retries: 20
-      delay: 30
+      register: spine_vm_create_result
+      until: spine_vm_create_result.finished
+      retries: 60
+      delay: 10
+
+    - name: Check for existing floating IP
+      set_fact:
+        # List network addresses for the spine network
+        # Filter network addresses to only those containing OS-EXT-IPS:type==`floating`
+        # Take the first filtered address (floating IP)
+        # Return the addr field
+        # Return the empty string if the above returns no results
+        spine_fip: "{{ (spine_vm_create_result.openstack.addresses[network] |
+                        community.general.json_query('[? \"OS-EXT-IPS:type\"==`floating` ]') |
+                        first
+                       ).addr | default('') }}"
+      vars:
+        network: "{{ instance_name }}-{{ spine.name }}-net"
+
+    - block:
+      - name: Create floating IP for spine gateway VM
+        openstack.cloud.floating_ip:
+          cloud: "{{ cloud_name }}"
+          network: "{{ external_network }}"
+          server: "{{ spine_vm.name }}"
+
+      # Honestly, I'm not kidding, openstack.cloud.floating_ip does not return
+      # the FIP it created. Seriously.
+      # floating_ip_info does not permit fetching floating ip by server
+      # So we fetch the server again
+
+      - name: Re-fetch server to determine floating IP
+        openstack.cloud.server_info:
+          server: "{{ spine_vm.id }}"
+        register: spine_vm_fetch
+
+      - name: Check for existing floating IP
+        set_fact:
+          # List network addresses for the spine network
+          # Filter network addresses to only those containing OS-EXT-IPS:type==`floating`
+          # Take the first filtered address (floating IP)
+          # Return the addr field
+          spine_fip: "{{ (spine_vm_fetch.openstack_servers[0].addresses[network] |
+                          community.general.json_query('[? \"OS-EXT-IPS:type\"==`floating` ]') |
+                          first
+                         ).addr }}"
+        vars:
+          network: "{{ instance_name }}-{{ spine.name }}-net"
+
+      vars:
+        spine_vm: "{{ spine_vm_create_result.openstack }}"
+      when: spine_fip == ""
 
     - name: Wait for leaf gateway VMs creation
       async_status:
@@ -108,7 +156,10 @@
       loop: "{{ leaf_vm_create.results }}"
       loop_control:
         loop_var: async_result_item
-      register: job_result
-      until: job_result.finished
-      retries: 20
-      delay: 30
+      register: leaf_vm_create_result
+      until: leaf_vm_create_result.finished
+      retries: 60
+      delay: 10
+
+    - debug:
+        msg: "Log into spine gateway VM on {{ spine_fip }}"

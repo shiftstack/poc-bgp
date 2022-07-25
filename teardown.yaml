@@ -5,6 +5,36 @@
     - name: Load variables
       ansible.builtin.include_vars: vars.yaml
 
+    - name: Fetch the spine gateway VM
+      openstack.cloud.server_info:
+        cloud: "{{ cloud_name }}"
+        server: "{{ instance_name }}-{{ spine.name }}-gateway"
+      register: spine_vm_fetch
+
+    - name: Check spine gateway VM floating for a floating IP
+      set_fact:
+        # List network addresses for the spine network
+        # Filter network addresses to only those containing OS-EXT-IPS:type==`floating`
+        # Take the first filtered address (floating IP)
+        # Return the addr field
+        spine_fip: "{{ (spine_vm_fetch.openstack_servers[0].addresses[network] |
+                        community.general.json_query('[? \"OS-EXT-IPS:type\"==`floating` ]') |
+                        first
+                       ).addr }}"
+      vars:
+        network: "{{ instance_name }}-{{ spine.name }}-net"
+      when: not spine_vm_fetch.failed
+
+    - name: Delete spine gateway VM floating IP
+      openstack.cloud.floating_ip:
+        cloud: "{{ cloud_name }}"
+        floating_ip_address: "{{ spine_fip }}"
+        network: "{{ external_network }}"
+        server: "{{ instance_name }}-{{ spine.name }}-gateway"
+        purge: true
+        state: absent
+      when: spine_fip != ""
+
     - name: Delete all gateway VMs
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
