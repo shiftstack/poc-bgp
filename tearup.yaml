@@ -130,6 +130,7 @@
 
       - name: Re-fetch server to determine floating IP
         openstack.cloud.server_info:
+          cloud: "{{ cloud_name }}"
           server: "{{ spine_vm.id }}"
         register: spine_vm_fetch
 
