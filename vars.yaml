@@ -16,3 +16,4 @@ leaves:
     cidr: 192.168.20.0/24
   - name: rack3
     cidr: 192.168.30.0/24
+all_networks: "[ {{ spine }} ] + {{ leaves }}"

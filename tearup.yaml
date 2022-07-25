@@ -10,7 +10,7 @@
         cloud: "{{ cloud_name }}"
         state: present
         name: "{{ instance_name }}-{{ item.name }}-net"
-      loop: "[ {{ spine }} ] + {{ leaves }}"
+      loop: "{{ all_networks }}"
     
     - name: Create OpenStack subnets
       openstack.cloud.subnet:
@@ -22,7 +22,7 @@
         enable_dhcp: yes
         dns_nameservers: "{{ item.dns_nameservers | default([]) }}"
         gateway_ip: "{{ item.cidr | ansible.utils.nthhost(1) }}"
-      loop: "[ {{ spine }} ] + {{ leaves }}"
+      loop: "{{ all_networks }}"
 
     - name: Create the OpenStack external router
       openstack.cloud.router:

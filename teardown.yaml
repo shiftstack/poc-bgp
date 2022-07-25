@@ -17,22 +17,12 @@
         name: "{{ instance_name }}-sg"
         state: absent
 
-    - name: Delete the Spine Gateway VM ports connected to the leaves
-      openstack.cloud.port:
-        cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-spine-gateway-{{ item.name }}-port"
-        state: absent
-      loop: "{{ leaves }}"
-
     - name: Delete the OpenStack external router
       openstack.cloud.router:
         cloud: "{{ cloud_name }}"
         state: absent
         name: "{{ instance_name }}-external-router"
 
-    - name: Delete the OpenStack networks
-      openstack.cloud.network:
-        cloud: "{{ cloud_name }}"
-        state: absent
-        name: "{{ instance_name }}-{{ item.name }}-net"
-      loop: "[ {{ spine }} ] + {{ leaves }}"
+    - name: Delete resources for network {{ item.name }}
+      include_tasks: teardown_network.yaml
+      loop: "{{ all_networks }}"
