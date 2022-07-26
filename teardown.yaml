@@ -23,8 +23,10 @@
                        ).addr }}"
       vars:
         network: "{{ instance_name }}-{{ spine.name }}-net"
-      when: not spine_vm_fetch.failed
+      when: spine_vm_fetch.openstack_servers|length > 0
 
+    # N.B This rule will use the fact cache if the spine gateway VM didn't
+    # exist. This is intentional.
     - name: Delete spine gateway VM floating IP
       openstack.cloud.floating_ip:
         cloud: "{{ cloud_name }}"
@@ -33,7 +35,7 @@
         server: "{{ instance_name }}-{{ spine.name }}-gateway"
         purge: true
         state: absent
-      when: spine_fip != ""
+      when: spine_fip is defined and spine_fip != ""
 
     - name: Delete all gateway VMs
       openstack.cloud.server:
@@ -65,3 +67,6 @@
     - name: Delete resources for network {{ item.name }}
       include_tasks: teardown_network.yaml
       loop: "{{ all_networks }}"
+
+    - name: Clear fact cache
+      ansible.builtin.meta: clear_facts
