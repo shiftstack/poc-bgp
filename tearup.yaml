@@ -6,80 +6,115 @@
       ansible.builtin.include_vars: vars.yaml
 
     - block:
-      - name: Create OpenStack networks
+      - name: Create leaf networks
         openstack.cloud.network:
           cloud: "{{ cloud_name }}"
           state: present
-          name: "{{ instance_name }}-{{ item.name }}-net"
-        loop: "{{ all_networks }}"
-        register: networks_result
+          name: "{{ instance_name }}-{{ item.name }}-leaf"
+        loop: "{{ leaves }}"
+        register: leaf_networks_result
 
-      - name: Cache networks
+      - name: Cache leaf networks
         set_fact:
-          networks: '{{ dict(networks_result.results | map("json_query", "[item.name, id]") | list) }}'
+          leaf_networks: '{{ dict(leaf_networks_result.results | map("json_query", "[item.name, id]") | list) }}'
           cacheable: true
-      when: networks is not defined
+      when: leaf_networks is not defined
 
     - block:
-      - name: Create OpenStack subnets
+      - name: Create leaf subnets
         openstack.cloud.subnet:
           cloud: "{{ cloud_name }}"
           state: present
           name: "{{ instance_name }}-{{ item.name }}-subnet"
-          network_name: "{{ networks[item.name] }}"
+          network_name: "{{ leaf_networks[item.name] }}"
           cidr: "{{ item.cidr }}"
           enable_dhcp: yes
-          dns_nameservers: "{{ item.dns_nameservers | default([]) }}"
+          dns_nameservers: "{{ dns_nameservers }}"
           gateway_ip: "{{ item.cidr | ansible.utils.nthhost(1) }}"
-        loop: "{{ all_networks }}"
-        register: subnets_result
+        loop: "{{ leaves }}"
+        register: leaf_subnets_result
 
-      - name: Cache subnets
+      - name: Cache leaf subnets
         set_fact:
-          subnets: '{{ dict(subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
+          leaf_subnets: '{{ dict(leaf_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
           cacheable: true
-      when: subnets is not defined
+      when: leaf_subnets is not defined
 
     - block:
-      - name: Create the OpenStack external router
-        openstack.cloud.router:
+      - name: Create patch networks
+        openstack.cloud.network:
           cloud: "{{ cloud_name }}"
-          name: "{{ instance_name }}-external-router"
-          network: "{{ external_network }}"
-          interfaces:
-            - "{{ subnets[spine.name] }}"
-        register: external_router_result
+          state: present
+          name: "{{ instance_name }}-{{ item.name }}-patch"
+        loop: "{{ leaves }}"
+        register: patch_networks_result
 
-      - name: Cache external router
+      - name: Cache patch networks
         set_fact:
-          external_router: "{{ external_router_result.router.id }}"
+          patch_networks: '{{ dict(patch_networks_result.results | map("json_query", "[item.name, id]") | list) }}'
           cacheable: true
-      when: external_router is not defined
+      when: patch_networks is not defined
 
     - block:
-      - name: Create VM ports on the spine network
+      - name: Create patch subnets
+        openstack.cloud.subnet:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item.name }}-patch"
+          network_name: "{{ patch_networks[item.name] }}"
+          cidr: "{{ item.patch_cidr }}"
+          enable_dhcp: yes
+        loop: "{{ leaves }}"
+        register: patch_subnets_result
+
+      - name: Cache leaf subnets
+        set_fact:
+          patch_subnets: '{{ dict(patch_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
+          cacheable: true
+      when: patch_subnets is not defined
+
+    - block:
+      - name: Create spine ports for ToR patches
         openstack.cloud.port:
           cloud: "{{ cloud_name }}"
-          name: "{{ instance_name }}-{{ item.name }}-spine-port"
-          network: "{{ instance_name }}-{{ spine.name }}-net"
+          name: "{{ instance_name }}-{{ item.name }}-spine-patch"
+          network: "{{ patch_networks[item.name] }}"
           fixed_ips:
-            - ip_address: "{{ item.spine_ip }}"
+            - ip_address: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
           port_security_enabled: false
-        loop: "{{ all_networks }}"
-        register: spine_ports_result
+        loop: "{{ leaves }}"
+        register: spine_patch_ports_result
 
-      - name: Cache spine ports
+      - name: Cache spine patch ports
         set_fact:
-          spine_ports: '{{ dict(spine_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
+          spine_patch_ports: '{{ dict(spine_patch_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
           cacheable: true
-      when: spine_ports is not defined
+      when: spine_patch_ports is not defined
+
+    - block:
+      - name: Create leaf ports for ToR patches
+        openstack.cloud.port:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-{{ item.name }}-leaf-patch"
+          network: "{{ patch_networks[item.name] }}"
+          fixed_ips:
+            - ip_address: "{{ item.patch_cidr | ansible.utils.nthhost(4) }}"
+          port_security_enabled: false
+        loop: "{{ leaves }}"
+        register: leaf_patch_ports_result
+
+      - name: Cache leaf patch ports
+        set_fact:
+          leaf_patch_ports: '{{ dict(leaf_patch_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
+          cacheable: true
+      when: leaf_patch_ports is not defined
 
     - block:
       - name: Create VM ports on leaf networks
         openstack.cloud.port:
           cloud: "{{ cloud_name }}"
           name: "{{ instance_name }}-{{ item.name }}-leaf-port"
-          network: "{{ instance_name }}-{{ item.name }}-net"
+          network: "{{ leaf_networks[item.name] }}"
           fixed_ips:
             - ip_address: "{{ item.cidr | ansible.utils.nthhost(1) }}"
           port_security_enabled: false
@@ -92,6 +127,22 @@
           cacheable: true
       when: leaf_ports is not defined
 
+    - block:
+      - name: Create external port for spine gateway VM
+        openstack.cloud.port:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-spine-external"
+          network: "{{ external_network }}"
+        register: spine_external_port_result
+
+      - name: Cache spine external port info
+        set_fact:
+          spine_external_port:
+            id: "{{ spine_external_port_result.id }}"
+            address: "{{ spine_external_port_result.port.fixed_ips[0].ip_address }}"
+          cacheable: true
+      when: spine_external_port is not defined
+
     - name: Create the spine gateway VM
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
@@ -99,7 +150,7 @@
         image: "{{ image }}"
         key_name: "{{ keypair | mandatory }}"
         flavor: "{{ flavor }}"
-        nics: "{{ [ { 'port-id': spine_ports['spine'] } ] }}" # Spine was the first VM port we created
+        nics: "{{ spine_gateway_nics }}"
         auto_ip: false
         security_groups: []
         timeout: 600
@@ -107,6 +158,10 @@
       poll: 0
       register: spine_vm_create
       when: spine_vm is not defined
+      vars:
+        spine_gateway_nics: "{{ [ { 'port-id': spine_external_port.id } ] +
+                                (leaves | map(attribute='name') | map('extract', spine_patch_ports) |
+                                          map('json_query', '{\"port-id\": @}') | list) }}"
 
     - name: Create the leaf gateway VMs
       openstack.cloud.server:
@@ -115,7 +170,7 @@
         image: "{{ image }}"
         key_name: "{{ keypair | mandatory }}"
         flavor: "{{ flavor }}"
-        nics: "{{ [ {'port-id': spine_ports[item.name] },
+        nics: "{{ [ {'port-id': leaf_patch_ports[item.name] },
                     {'port-id': leaf_ports[item.name] } ] }}"
         auto_ip: false
         security_groups: []
@@ -142,58 +197,6 @@
       when: spine_vm is not defined
 
     - block:
-      - name: Check for existing floating IP
-        set_fact:
-          # List network addresses for the spine network
-          # Filter network addresses to only those containing OS-EXT-IPS:type==`floating`
-          # Take the first filtered address (floating IP)
-          # Return the addr field
-          # Return the empty string if the above returns no results
-          spine_fip: "{{ (spine_vm.addresses[spine_network] |
-                          community.general.json_query('[? \"OS-EXT-IPS:type\"==`floating` ]') |
-                          first
-                         ).addr | default('') }}"
-          cacheable: true
-
-      - block:
-        - name: Create floating IP for spine gateway VM
-          openstack.cloud.floating_ip:
-            cloud: "{{ cloud_name }}"
-            network: "{{ external_network }}"
-            server: "{{ spine_vm.name }}"
-
-        # Honestly, I'm not kidding, openstack.cloud.floating_ip does not return
-        # the FIP it created. Seriously.
-        # floating_ip_info does not permit fetching floating ip by server
-        # So we fetch the server again
-
-        - name: Re-fetch server to determine floating IP
-          openstack.cloud.server_info:
-            cloud: "{{ cloud_name }}"
-            server: "{{ spine_vm.id }}"
-          register: spine_vm_fetch
-
-        - name: Update spine gateway VM cache
-          set_fact:
-            spine_vm: "{{ spine_vm_fetch.openstack_servers[0] }}"
-            cacheable: true
-
-        - name: Check for existing floating IP
-          set_fact:
-            # List network addresses for the spine network
-            # Filter network addresses to only those containing OS-EXT-IPS:type==`floating`
-            # Take the first filtered address (floating IP)
-            # Return the addr field
-            spine_fip: "{{ (spine_vm.addresses[spine_network] |
-                            community.general.json_query('[? \"OS-EXT-IPS:type\"==`floating` ]') |
-                            first
-                           ).addr }}"
-        when: spine_fip == ""
-      vars:
-        spine_network: "{{ instance_name }}-{{ spine.name }}-net"
-      when: spine_fip is not defined or spine_fip == ""
-
-    - block:
       - name: Wait for leaf gateway VMs creation
         async_status:
           jid: "{{ async_result_item.ansible_job_id }}"
@@ -205,9 +208,6 @@
         retries: 60
         delay: 10
 
-      - debug:
-          var: leaf_vm_create_result
-
       - name: Cache leaf gateway VMs
         set_fact:
           leaf_vms: '{{ dict(leaf_vm_create_result.results | map("json_query", "[async_result_item.item.name, openstack]") | list) }}'
@@ -217,7 +217,7 @@
     - name: Add spine gateway VM host
       add_host:
         name: spine
-        ansible_host: "{{ spine_fip }}"
+        ansible_host: "{{ spine_external_port.address }}"
         ansible_user: cloud-user
         groups:
         - gateways
@@ -225,13 +225,36 @@
     - name: Add leaf gateway VM hosts
       add_host:
         name: "{{ item.name }}"
-        ansible_host: "{{ item.spine_ip }}"
+        ansible_host: "{{ item.patch_cidr | ansible.utils.nthhost(4) }}"
         ansible_user: cloud-user
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_fip }}"'
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.address }}"'
         groups:
         - gateways
         - leaves
       loop: "{{ leaves }}"
 
     - debug:
-        msg: "Log into spine gateway VM on {{ spine_fip }}"
+        msg: "Log into spine gateway VM on {{ spine_external_port.address }}"
+
+- hosts: rack1
+  gather_facts: false
+  become: yes
+
+  tasks:
+    - name: Load variables
+      ansible.builtin.include_vars: vars.yaml
+
+    - name: Enable IPv4 routing
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+
+    - name: Install FRR
+      ansible.builtin.package:
+        name: frr
+
+    - name: Enable FRR
+      ansible.builtin.systemd:
+        name: frr
+        enabled: yes
+        state: started
