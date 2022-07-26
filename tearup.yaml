@@ -6,41 +6,6 @@
       ansible.builtin.include_vars: vars.yaml
 
     - block:
-      - name: Create leaf networks
-        openstack.cloud.network:
-          cloud: "{{ cloud_name }}"
-          state: present
-          name: "{{ instance_name }}-{{ item.name }}-leaf"
-        loop: "{{ leaves }}"
-        register: leaf_networks_result
-
-      - name: Cache leaf networks
-        set_fact:
-          leaf_networks: '{{ dict(leaf_networks_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: leaf_networks is not defined
-
-    - block:
-      - name: Create leaf subnets
-        openstack.cloud.subnet:
-          cloud: "{{ cloud_name }}"
-          state: present
-          name: "{{ instance_name }}-{{ item.name }}-subnet"
-          network_name: "{{ leaf_networks[item.name] }}"
-          cidr: "{{ item.cidr }}"
-          enable_dhcp: yes
-          dns_nameservers: "{{ dns_nameservers }}"
-          gateway_ip: "{{ item.cidr | ansible.utils.nthhost(1) }}"
-        loop: "{{ leaves }}"
-        register: leaf_subnets_result
-
-      - name: Cache leaf subnets
-        set_fact:
-          leaf_subnets: '{{ dict(leaf_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: leaf_subnets is not defined
-
-    - block:
       - name: Create patch networks
         openstack.cloud.network:
           cloud: "{{ cloud_name }}"
@@ -67,7 +32,7 @@
         loop: "{{ leaves }}"
         register: patch_subnets_result
 
-      - name: Cache leaf subnets
+      - name: Cache patch subnets
         set_fact:
           patch_subnets: '{{ dict(patch_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
           cacheable: true
@@ -108,6 +73,41 @@
           leaf_patch_ports: '{{ dict(leaf_patch_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
           cacheable: true
       when: leaf_patch_ports is not defined
+
+    - block:
+      - name: Create leaf networks
+        openstack.cloud.network:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item.name }}-leaf"
+        loop: "{{ leaves }}"
+        register: leaf_networks_result
+
+      - name: Cache leaf networks
+        set_fact:
+          leaf_networks: '{{ dict(leaf_networks_result.results | map("json_query", "[item.name, id]") | list) }}'
+          cacheable: true
+      when: leaf_networks is not defined
+
+    - block:
+      - name: Create leaf subnets
+        openstack.cloud.subnet:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item.name }}-subnet"
+          network_name: "{{ leaf_networks[item.name] }}"
+          cidr: "{{ item.cidr }}"
+          enable_dhcp: yes
+          dns_nameservers: "{{ dns_nameservers }}"
+          gateway_ip: "{{ item.cidr | ansible.utils.nthhost(1) }}"
+        loop: "{{ leaves }}"
+        register: leaf_subnets_result
+
+      - name: Cache leaf subnets
+        set_fact:
+          leaf_subnets: '{{ dict(leaf_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
+          cacheable: true
+      when: leaf_subnets is not defined
 
     - block:
       - name: Create VM ports on leaf networks
