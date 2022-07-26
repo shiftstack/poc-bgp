@@ -214,5 +214,24 @@
           cacheable: true
       when: leaf_vms is not defined
 
+    - name: Add spine gateway VM host
+      add_host:
+        name: spine
+        ansible_host: "{{ spine_fip }}"
+        ansible_user: cloud-user
+        groups:
+        - gateways
+
+    - name: Add leaf gateway VM hosts
+      add_host:
+        name: "{{ item.name }}"
+        ansible_host: "{{ item.spine_ip }}"
+        ansible_user: cloud-user
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_fip }}"'
+        groups:
+        - gateways
+        - leaves
+      loop: "{{ leaves }}"
+
     - debug:
         msg: "Log into spine gateway VM on {{ spine_fip }}"
