@@ -146,7 +146,7 @@
     - name: Create the spine gateway VM
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-{{ spine.name }}-gateway"
+        name: "{{ instance_name }}-spine-gateway"
         image: "{{ image }}"
         key_name: "{{ keypair | mandatory }}"
         flavor: "{{ flavor }}"
@@ -248,13 +248,3 @@
       ansible.posix.sysctl:
         name: net.ipv4.ip_forward
         value: 1
-
-    - name: Install FRR
-      ansible.builtin.package:
-        name: frr
-
-    - name: Enable FRR
-      ansible.builtin.systemd:
-        name: frr
-        enabled: yes
-        state: started

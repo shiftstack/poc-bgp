@@ -2,7 +2,7 @@
 - name: Fetch {{ item.name }} network
   openstack.cloud.networks_info:
     cloud: "{{ cloud_name }}"
-    name: "{{ instance_name }}-{{ item.name }}-net"
+    name: "{{ instance_name }}-{{ item.name }}-{{ network_type }}"
   register: network_result
 
 - block:
@@ -26,6 +26,6 @@
   - name: Delete {{ item.name }} network
     openstack.cloud.network:
       cloud: "{{ cloud_name }}"
-      name: "{{ instance_name }}-{{ item.name }}-net"
+      name: "{{ instance_name }}-{{ item.name }}-{{ network_type }}"
       state: absent
   when: network_result.openstack_networks|length > 0

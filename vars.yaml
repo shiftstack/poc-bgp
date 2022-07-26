@@ -16,4 +16,3 @@ leaves:
   - name: rack3
     cidr: 192.168.30.0/24
     patch_cidr: 192.168.0.16/29
-all_networks: "[ {{ spine }} ] + {{ leaves }}"

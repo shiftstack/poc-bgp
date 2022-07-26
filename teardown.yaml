@@ -8,41 +8,15 @@
     - name: Fetch the spine gateway VM
       openstack.cloud.server_info:
         cloud: "{{ cloud_name }}"
-        server: "{{ instance_name }}-{{ spine.name }}-gateway"
+        server: "{{ instance_name }}-spine-gateway"
       register: spine_vm_fetch
-
-    - name: Check spine gateway VM floating for a floating IP
-      set_fact:
-        # List network addresses for the spine network
-        # Filter network addresses to only those containing OS-EXT-IPS:type==`floating`
-        # Take the first filtered address (floating IP)
-        # Return the addr field
-        spine_fip: "{{ (spine_vm_fetch.openstack_servers[0].addresses[network] |
-                        community.general.json_query('[? \"OS-EXT-IPS:type\"==`floating` ]') |
-                        first
-                       ).addr }}"
-      vars:
-        network: "{{ instance_name }}-{{ spine.name }}-net"
-      when: spine_vm_fetch.openstack_servers|length > 0
-
-    # N.B This rule will use the fact cache if the spine gateway VM didn't
-    # exist. This is intentional.
-    - name: Delete spine gateway VM floating IP
-      openstack.cloud.floating_ip:
-        cloud: "{{ cloud_name }}"
-        floating_ip_address: "{{ spine_fip }}"
-        network: "{{ external_network }}"
-        server: "{{ instance_name }}-{{ spine.name }}-gateway"
-        purge: true
-        state: absent
-      when: spine_fip is defined and spine_fip != ""
 
     - name: Delete all gateway VMs
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
         name: "{{ instance_name }}-{{ item.name }}-gateway"
         state: absent
-      loop: "{{ all_networks }}"
+      loop: "{{ leaves }}"
       async: 600
       poll: 0
       register: delete_vms
@@ -58,15 +32,17 @@
       retries: 30
       delay: 20
 
-    - name: Delete the OpenStack external router
-      openstack.cloud.router:
-        cloud: "{{ cloud_name }}"
-        state: absent
-        name: "{{ instance_name }}-external-router"
-
-    - name: Delete resources for network {{ item.name }}
+    - name: Delete resources for leaf networks
       include_tasks: teardown_network.yaml
-      loop: "{{ all_networks }}"
+      loop: "{{ leaves }}"
+      vars:
+        network_type: leaf
+
+    - name: Delete resources for patch networks
+      include_tasks: teardown_network.yaml
+      loop: "{{ leaves }}"
+      vars:
+        network_type: patch
 
     - name: Clear fact cache
       ansible.builtin.meta: clear_facts
