@@ -267,9 +267,9 @@
     - debug:
         msg: "Log into spine gateway VM on {{ spine_external_port.address }}"
 
-- hosts: rack1
+- hosts: gateways
   gather_facts: false
-  become: yes
+  become: true
 
   tasks:
     - name: Load variables
@@ -280,7 +280,59 @@
         delay: 20
         timeout: 300
 
-    - name: Enable IPv4 routing
-      ansible.posix.sysctl:
+    - name: set IPv4 forwarding
+      sysctl:
         name: net.ipv4.ip_forward
-        value: 1
+        value: '1'
+        sysctl_set: yes
+        sysctl_file: /etc/sysctl.d/90-network.conf
+        state: present
+        reload: yes
+  
+    - name: set IPv6 forwarding
+      sysctl:
+        name: net.ipv6.conf.all.forwarding
+        value: '1'
+        sysctl_set: yes
+        sysctl_file: /etc/sysctl.d/90-network.conf
+        state: present
+        reload: yes
+
+    - name: disable reverse path forwarding validation
+      sysctl:
+        name: net.ipv4.conf.all.rp_filter
+        value: '2'
+        sysctl_set: yes
+        sysctl_file: /etc/sysctl.d/90-network.conf
+        state: present
+        reload: yes
+
+    - name: Install frr
+      ansible.builtin.package:
+        name: frr
+        state: present
+    
+    - name: enable FRR BGP daemon
+      ansible.builtin.lineinfile:
+        path: /etc/frr/daemons
+        regexp: "^bgpd="
+        line: "bgpd=yes"
+        owner: frr
+        group: frr
+        mode: '640'
+  
+    - name: enable FRR BFD daemon
+      ansible.builtin.lineinfile:
+        path: /etc/frr/daemons
+        regexp: "^bfdd="
+        line: "bfdd=yes"
+        owner: frr
+        group: frr
+        mode: '640'
+
+    - name: enable and start FRR
+      become: true
+      ansible.builtin.service:
+        name: frr
+        enabled: yes
+        state: restarted
