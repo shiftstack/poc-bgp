@@ -134,7 +134,12 @@
           cidr: "{{ item.cidr }}"
           enable_dhcp: yes
           dns_nameservers: "{{ dns_nameservers }}"
-          gateway_ip: "{{ item.cidr | ansible.utils.nthhost(1) }}"
+          no_gateway_ip: yes
+          allocation_pool_start: "{{ item.cidr | ansible.utils.nthhost(2) }}"
+          allocation_pool_end: "{{ item.cidr | ansible.utils.nthhost(3) }}"
+          host_routes:
+            - destination: 0.0.0.0/0
+              nexthop: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
         loop: "{{ leaves }}"
         register: leaf_subnets_result
 
