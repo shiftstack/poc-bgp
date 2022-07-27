@@ -28,9 +28,6 @@
           port_range_max: 22
         register: security_group_rule_result
 
-      - debug:
-          var: security_group_rule_result
-
       - name: Cache security group rule
         set_fact:
           security_group_rule: '{{ security_group_rule_result.id }}'
