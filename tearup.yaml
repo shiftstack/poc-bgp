@@ -275,6 +275,11 @@
     - name: Load variables
       ansible.builtin.include_vars: vars.yaml
 
+    - name: Wait for the host to be up and ssh available
+      wait_for_connection:
+        delay: 20
+        timeout: 300
+
     - name: Enable IPv4 routing
       ansible.posix.sysctl:
         name: net.ipv4.ip_forward
