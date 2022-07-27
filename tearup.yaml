@@ -270,16 +270,22 @@
 - hosts: gateways
   gather_facts: false
   strategy: free
+
+  tasks:
+    - name: Wait for the host to be up and ssh available
+      wait_for_connection:
+        delay: 20
+        timeout: 300
+
+
+- hosts: gateways
+  gather_facts: true
+  strategy: free
   become: true
 
   tasks:
     - name: Load variables
       ansible.builtin.include_vars: vars.yaml
-
-    - name: Wait for the host to be up and ssh available
-      wait_for_connection:
-        delay: 20
-        timeout: 300
 
     - name: set IPv4 forwarding
       sysctl:
@@ -327,6 +333,14 @@
         path: /etc/frr/daemons
         regexp: "^bfdd="
         line: "bfdd=yes"
+        owner: frr
+        group: frr
+        mode: '640'
+
+    - name: configure FRR
+      ansible.builtin.template:
+        src: ./templates/frr.conf.j2
+        dest: /etc/frr/frr.conf
         owner: frr
         group: frr
         mode: '640'
