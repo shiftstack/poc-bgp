@@ -44,6 +44,12 @@
       vars:
         network_type: patch
 
+    - name: Delete external port for spine gateway VM
+      openstack.cloud.port:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-spine-external"
+        state: absent
+
     - name: Delete security group for the spine gateway
       openstack.cloud.security_group:
         cloud: "{{ cloud_name }}"
