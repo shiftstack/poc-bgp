@@ -58,6 +58,12 @@
           network_name: "{{ patch_networks[item.name] }}"
           cidr: "{{ item.patch_cidr }}"
           enable_dhcp: yes
+          no_gateway_ip: yes
+          allocation_pool_start: "{{ item.patch_cidr | ansible.utils.nthhost(2) }}"
+          allocation_pool_end: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
+          host_routes:
+            - destination: 0.0.0.0/0
+              nexthop: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
         loop: "{{ leaves }}"
         register: patch_subnets_result
 
