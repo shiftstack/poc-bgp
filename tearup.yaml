@@ -277,6 +277,27 @@
         delay: 20
         timeout: 300
 
+- hosts: spine
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: Install IPtables
+      ansible.builtin.package:
+        name: iptables
+        state: present
+
+    - name: Configure masquerading
+      shell: "iptables -t nat -A POSTROUTING -o {{ ansible_facts.default_ipv4.interface }} -j SNAT --to {{ ansible_facts.default_ipv4.address }}"
+
+    - name: set IPv4 forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: yes
+        sysctl_file: /etc/sysctl.d/90-network.conf
+        state: present
+        reload: yes
 
 - hosts: gateways
   gather_facts: true
