@@ -6,6 +6,38 @@
       ansible.builtin.include_vars: vars.yaml
 
     - block:
+      - name: Create security group for the spine gateway
+        openstack.cloud.security_group:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-spine-sg"
+        register: security_group_result
+
+      - name: Cache security group
+        set_fact:
+          security_group: '{{ security_group_result.id }}'
+          cacheable: true
+      when: security_group is not defined
+
+    - block:
+      - name: Create security group rule to allow SSH
+        openstack.cloud.security_group_rule:
+          cloud: "{{ cloud_name }}"
+          security_group: "{{ security_group }}"
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+        register: security_group_rule_result
+
+      - debug:
+          var: security_group_rule_result
+
+      - name: Cache security group rule
+        set_fact:
+          security_group_rule: '{{ security_group_rule_result.id }}'
+          cacheable: true
+      when: security_group_rule is not defined
+
+    - block:
       - name: Create patch networks
         openstack.cloud.network:
           cloud: "{{ cloud_name }}"
@@ -133,6 +165,8 @@
           cloud: "{{ cloud_name }}"
           name: "{{ instance_name }}-spine-external"
           network: "{{ external_network }}"
+          security_groups:
+            - "{{ security_group }}"
         register: spine_external_port_result
 
       - name: Cache spine external port info
