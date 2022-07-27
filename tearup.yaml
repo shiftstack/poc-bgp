@@ -269,6 +269,7 @@
 
 - hosts: gateways
   gather_facts: false
+  strategy: free
   become: true
 
   tasks:
