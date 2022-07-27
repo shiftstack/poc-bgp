@@ -139,7 +139,7 @@
           allocation_pool_end: "{{ item.cidr | ansible.utils.nthhost(3) }}"
           host_routes:
             - destination: 0.0.0.0/0
-              nexthop: "{{ item.cidr | ansible.utils.nthhost(3) }}"
+              nexthop: "{{ item.cidr | ansible.utils.nthhost(1) }}"
         loop: "{{ leaves }}"
         register: leaf_subnets_result
 
