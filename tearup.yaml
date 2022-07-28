@@ -1,5 +1,11 @@
 - hosts: localhost
   gather_facts: false
+  vars:
+    port_struct_query: "{id: port.id,
+                         mac_address: port.mac_address,
+                         ip_address: port.fixed_ips[0].ip_address,
+                         subnet: port.fixed_ips[0].subnet_id}"
+    port_struct_map_query: "[item.key, {{ port_struct_query }}]"
 
   tasks:
     - name: Load variables
@@ -26,146 +32,33 @@
           protocol: tcp
           port_range_min: 22
           port_range_max: 22
-        register: security_group_rule_result
+        register: security_group_rule_ssh_result
 
       - name: Cache security group rule
         set_fact:
-          security_group_rule: '{{ security_group_rule_result.id }}'
+          security_group_ssh_rule: '{{ security_group_rule_ssh_result.id }}'
           cacheable: true
-      when: security_group_rule is not defined
+      when: security_group_ssh_rule is not defined
 
+    # N.B. For reasons I don't understand the ICMP rule is not idempotent. If
+    # you delete the fact cache and re-run the playbook this will fail with
+    # SecurityGroupRuleExists. The SSH rule above doesn't seem to have the same
+    # problem. The error message will contain the id of the existing rule, but
+    # unfortunately not in a machine parseable format. The workaround is to
+    # delete it and re-run the playbook.
     - block:
-      - name: Create patch networks
-        openstack.cloud.network:
+      - name: Create security group rule to allow ICMP
+        openstack.cloud.security_group_rule:
           cloud: "{{ cloud_name }}"
-          state: present
-          name: "{{ instance_name }}-{{ item.name }}-patch"
-        loop: "{{ leaves }}"
-        register: patch_networks_result
+          security_group: "{{ security_group }}"
+          protocol: icmp
+        register: security_group_rule_icmp_result
 
-      - name: Cache patch networks
+      - name: Cache security group rule
         set_fact:
-          patch_networks: '{{ dict(patch_networks_result.results | map("json_query", "[item.name, id]") | list) }}'
+          security_group_icmp_rule: '{{ security_group_rule_icmp_result.id }}'
           cacheable: true
-      when: patch_networks is not defined
-
-    - block:
-      - name: Create patch subnets
-        openstack.cloud.subnet:
-          cloud: "{{ cloud_name }}"
-          state: present
-          name: "{{ instance_name }}-{{ item.name }}-patch"
-          network_name: "{{ patch_networks[item.name] }}"
-          cidr: "{{ item.patch_cidr }}"
-          enable_dhcp: yes
-          no_gateway_ip: yes
-          allocation_pool_start: "{{ item.patch_cidr | ansible.utils.nthhost(2) }}"
-          allocation_pool_end: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
-          host_routes:
-            - destination: 0.0.0.0/0
-              nexthop: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
-        loop: "{{ leaves }}"
-        register: patch_subnets_result
-
-      - name: Cache patch subnets
-        set_fact:
-          patch_subnets: '{{ dict(patch_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: patch_subnets is not defined
-
-    - block:
-      - name: Create spine ports for ToR patches
-        openstack.cloud.port:
-          cloud: "{{ cloud_name }}"
-          name: "{{ instance_name }}-{{ item.name }}-spine-patch"
-          network: "{{ patch_networks[item.name] }}"
-          fixed_ips:
-            - ip_address: "{{ item.patch_cidr | ansible.utils.nthhost(3) }}"
-          port_security_enabled: false
-        loop: "{{ leaves }}"
-        register: spine_patch_ports_result
-
-      - name: Cache spine patch ports
-        set_fact:
-          spine_patch_ports: '{{ dict(spine_patch_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: spine_patch_ports is not defined
-
-    - block:
-      - name: Create leaf ports for ToR patches
-        openstack.cloud.port:
-          cloud: "{{ cloud_name }}"
-          name: "{{ instance_name }}-{{ item.name }}-leaf-patch"
-          network: "{{ patch_networks[item.name] }}"
-          fixed_ips:
-            - ip_address: "{{ item.patch_cidr | ansible.utils.nthhost(4) }}"
-          port_security_enabled: false
-        loop: "{{ leaves }}"
-        register: leaf_patch_ports_result
-
-      - name: Cache leaf patch ports
-        set_fact:
-          leaf_patch_ports: '{{ dict(leaf_patch_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: leaf_patch_ports is not defined
-
-    - block:
-      - name: Create leaf networks
-        openstack.cloud.network:
-          cloud: "{{ cloud_name }}"
-          state: present
-          name: "{{ instance_name }}-{{ item.name }}-leaf"
-        loop: "{{ leaves }}"
-        register: leaf_networks_result
-
-      - name: Cache leaf networks
-        set_fact:
-          leaf_networks: '{{ dict(leaf_networks_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: leaf_networks is not defined
-
-    - block:
-      - name: Create leaf subnets
-        openstack.cloud.subnet:
-          cloud: "{{ cloud_name }}"
-          state: present
-          name: "{{ instance_name }}-{{ item.name }}-subnet"
-          network_name: "{{ leaf_networks[item.name] }}"
-          cidr: "{{ item.cidr }}"
-          enable_dhcp: yes
-          dns_nameservers: "{{ dns_nameservers }}"
-          no_gateway_ip: yes
-          allocation_pool_start: "{{ item.cidr | ansible.utils.nthhost(2) }}"
-          allocation_pool_end: "{{ item.cidr | ansible.utils.nthhost(3) }}"
-          host_routes:
-            - destination: 0.0.0.0/0
-              nexthop: "{{ item.cidr | ansible.utils.nthhost(1) }}"
-        loop: "{{ leaves }}"
-        register: leaf_subnets_result
-
-      - name: Cache leaf subnets
-        set_fact:
-          leaf_subnets: '{{ dict(leaf_subnets_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: leaf_subnets is not defined
-
-    - block:
-      - name: Create VM ports on leaf networks
-        openstack.cloud.port:
-          cloud: "{{ cloud_name }}"
-          name: "{{ instance_name }}-{{ item.name }}-leaf-port"
-          network: "{{ leaf_networks[item.name] }}"
-          fixed_ips:
-            - ip_address: "{{ item.cidr | ansible.utils.nthhost(1) }}"
-          port_security_enabled: false
-        loop: "{{ leaves }}"
-        register: leaf_ports_result
-
-      - name: Cache leaf ports
-        set_fact:
-          leaf_ports: '{{ dict(leaf_ports_result.results | map("json_query", "[item.name, id]") | list) }}'
-          cacheable: true
-      when: leaf_ports is not defined
+      when: security_group_icmp_rule is not defined
 
     - block:
       - name: Create external port for spine gateway VM
@@ -179,11 +72,206 @@
 
       - name: Cache spine external port info
         set_fact:
-          spine_external_port:
-            id: "{{ spine_external_port_result.id }}"
-            address: "{{ spine_external_port_result.port.fixed_ips[0].ip_address }}"
+          spine_external_port: "{{ spine_external_port_result | json_query(port_struct_query) }}"
           cacheable: true
       when: spine_external_port is not defined
+
+    - block:
+      - name: Get external subnet info
+        openstack.cloud.subnets_info:
+          cloud: "{{ cloud_name }}"
+          filters:
+            id: "{{ spine_external_port.subnet }}"
+        register: external_subnet_result
+
+      - name: Cache external subnet info
+        set_fact:
+          external_subnet: "{{ external_subnet_result.openstack_subnets[0] }}"
+          cacheable: true
+      when: external_subnet is not defined
+
+    - block:
+      - name: Create patch networks
+        openstack.cloud.network:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item }}-patch"
+        loop: "{{ leaves.keys() | list }}"
+        register: patch_networks_result
+
+      - name: Cache patch networks
+        set_fact:
+          patch_networks: '{{ dict(patch_networks_result.results | map("json_query", "[item, id]") | list) }}'
+          cacheable: true
+      when: patch_networks is not defined
+
+    - block:
+      - name: Create patch subnets
+        openstack.cloud.subnet:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item.key }}-patch"
+          network_name: "{{ patch_networks[item.key] }}"
+          cidr: "{{ item.value.patch_cidr }}"
+          enable_dhcp: no
+        loop: "{{ leaves | dict2items }}"
+        register: patch_subnets_result
+
+      - name: Cache patch subnets
+        set_fact:
+          patch_subnets: '{{ dict(patch_subnets_result.results | map("json_query", "[item.key, id]") | list) }}'
+          cacheable: true
+      when: patch_subnets is not defined
+
+    - block:
+      - name: Create spine ports for ToR patches
+        openstack.cloud.port:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-{{ item.key }}-spine-patch"
+          network: "{{ patch_networks[item.key] }}"
+          fixed_ips:
+            - ip_address: "{{ item.value.patch_cidr | ansible.utils.nthhost(1) }}"
+          port_security_enabled: false
+        loop: "{{ leaves | dict2items }}"
+        register: spine_patch_ports_result
+
+      - name: Cache spine patch ports
+        set_fact:
+          spine_patch_ports: "{{ dict(spine_patch_ports_result.results | map('json_query', port_struct_map_query) | list) }}"
+          cacheable: true
+      when: spine_patch_ports is not defined
+
+    - block:
+      - name: Create leaf ports for ToR patches
+        openstack.cloud.port:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-{{ item.key }}-leaf-patch"
+          network: "{{ patch_networks[item.key] }}"
+          fixed_ips:
+            - ip_address: "{{ item.value.patch_cidr | ansible.utils.nthhost(2) }}"
+          port_security_enabled: false
+        loop: "{{ leaves | dict2items }}"
+        register: leaf_patch_ports_result
+
+      - name: Cache leaf patch ports
+        set_fact:
+          leaf_patch_ports: "{{ dict(leaf_patch_ports_result.results | map('json_query', port_struct_map_query) | list) }}"
+          cacheable: true
+      when: leaf_patch_ports is not defined
+
+    - block:
+      - name: Create leaf networks
+        openstack.cloud.network:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item }}-leaf"
+        loop: "{{ leaves.keys() | list }}"
+        register: leaf_networks_result
+
+      - name: Cache leaf networks
+        set_fact:
+          leaf_networks: '{{ dict(leaf_networks_result.results | map("json_query", "[item, id]") | list) }}'
+          cacheable: true
+      when: leaf_networks is not defined
+
+    - block:
+      - name: Create leaf subnets
+        openstack.cloud.subnet:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-{{ item.key }}-subnet"
+          network_name: "{{ leaf_networks[item.key] }}"
+          cidr: "{{ item.value.cidr }}"
+          enable_dhcp: yes
+          dns_nameservers: "{{ external_subnet.dns_nameservers }}"
+          gateway_ip: "{{ item.value.cidr | ansible.utils.nthhost(1) }}"
+          allocation_pool_start: "{{ item.value.cidr | ansible.utils.nthhost(10) }}"
+          allocation_pool_end: "{{ item.value.cidr | ansible.utils.nthhost(-2) }}"
+        loop: "{{ leaves | dict2items }}"
+        register: leaf_subnets_result
+
+      - name: Cache leaf subnets
+        set_fact:
+          leaf_subnets: '{{ dict(leaf_subnets_result.results | map("json_query", "[item.key, id]") | list) }}'
+          cacheable: true
+      when: leaf_subnets is not defined
+
+    - block:
+      - name: Create VM ports on leaf networks
+        openstack.cloud.port:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-{{ item.key }}-leaf-port"
+          network: "{{ leaf_networks[item.key] }}"
+          fixed_ips:
+            - ip_address: "{{ item.value.cidr | ansible.utils.nthhost(1) }}"
+          port_security_enabled: false
+        loop: "{{ leaves | dict2items }}"
+        register: leaf_ports_result
+
+      - name: Cache leaf ports
+        set_fact:
+          leaf_ports: "{{ dict(leaf_ports_result.results | map('json_query', port_struct_map_query) | list) }}"
+          cacheable: true
+      when: leaf_ports is not defined
+
+    - name: Construct netplan config for spine patch nics
+      set_fact:
+        spine_patch_nics: "{{ spine_patch_nics | default({}) | combine({item.key: spine_patch_nic}) }}"
+      vars:
+        spine_patch_nic:
+          match:
+            macaddress: "{{ item.value.mac_address }}"
+          addresses:
+          - "{{ item.value.ip_address }}/{{ leaves[item.key].patch_cidr | ansible.utils.ipaddr('prefix') }}"
+          dhcp4: false
+          # TODO: Find some way to disable gateway creation here, or we have to
+          # remove it from /etc/sysconfig/network-scripts/ifcfg-eth? later
+      loop: "{{ spine_patch_ports | dict2items }}"
+
+    - name: Construct network cloud-init for spine gateway VM
+      set_fact:
+        spine_netconfig:
+          network:
+            version: 2
+            ethernets: "{{ { 'external': external } | combine(spine_patch_nics) }}"
+      vars:
+        external:
+          external:
+            match:
+              macaddress: "{{ spine_external_port.mac_address }}"
+            addresses:
+            - "{{ spine_external_port.ip_address }}/{{ external_subnet.cidr | ansible.utils.ipaddr('prefix') }}"
+            gateway4: "{{ external_subnet.gateway_ip }}"
+            dhcp4: false
+            nameservers:
+              addresses: "{{ external_subnet.dns_nameservers }}"
+
+    - name: Construct network cloud-init for leaf gateway VMs
+      set_fact:
+        leaf_netconfigs: "{{ (leaf_netconfigs | default({})) | combine({item: netconfig}) }}"
+      vars:
+        netconfig:
+            network:
+              version: 2
+              ethernets:
+                spine:
+                  match:
+                    macaddress: "{{ leaf_patch_ports[item].mac_address }}"
+                  addresses:
+                  - "{{ leaf_patch_ports[item].ip_address }}/{{ leaves[item].patch_cidr | ansible.utils.ipaddr('prefix') }}"
+                  gateway4: "{{ spine_patch_ports[item].ip_address }}"
+                  nameservers:
+                    addresses: "{{ external_subnet.dns_nameservers }}"
+                  dhcp4: false
+                leaf:
+                  match:
+                    macaddress: "{{ leaf_ports[item].mac_address }}"
+                  addresses:
+                  - "{{ leaf_ports[item].ip_address }}/{{ leaves[item].cidr | ansible.utils.ipaddr('prefix') }}"
+                  dhcp4: false
+                # TODO: Find some way to disable gateway creation here, or we have to
+                # remove it from /etc/sysconfig/network-scripts/ifcfg-eth? later
+      loop: "{{ leaves.keys() | list }}"
 
     - name: Create the spine gateway VM
       openstack.cloud.server:
@@ -195,33 +283,45 @@
         nics: "{{ spine_gateway_nics }}"
         auto_ip: false
         security_groups: []
+        userdata: |
+          #cloud-config
+          {{ userdata | to_yaml }}
+        config_drive: yes
         timeout: 600
       async: 600
       poll: 0
       register: spine_vm_create
       when: spine_vm is not defined
       vars:
-        spine_gateway_nics: "{{ [ { 'port-id': spine_external_port.id } ] +
-                                (leaves | map(attribute='name') | map('extract', spine_patch_ports) |
-                                          map('json_query', '{\"port-id\": @}') | list) }}"
+        spine_gateway_nics: "{{ ([ spine_external_port ] + (spine_patch_ports.values() | list)) |
+                                map('json_query', '{\"port-id\": id}') | list }}"
+        userdata:
+          network: "{{ spine_netconfig }}"
 
     - name: Create the leaf gateway VMs
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-{{ item.name }}-gateway"
+        name: "{{ instance_name }}-{{ item }}-gateway"
         image: "{{ image }}"
         key_name: "{{ keypair | mandatory }}"
         flavor: "{{ flavor }}"
-        nics: "{{ [ {'port-id': leaf_patch_ports[item.name] },
-                    {'port-id': leaf_ports[item.name] } ] }}"
+        nics: "{{ [ {'port-id': leaf_patch_ports[item].id },
+                    {'port-id': leaf_ports[item].id } ] }}"
         auto_ip: false
         security_groups: []
+        userdata: |
+          #cloud-config
+          {{ userdata | to_yaml }}
+        config_drive: yes
         timeout: 600
-      loop: "{{ leaves }}"
+      loop: "{{ leaves.keys() | list }}"
       async: 600
       poll: 0
       register: leaf_vm_create
       when: leaf_vms is not defined
+      vars:
+        userdata:
+          network: "{{ leaf_netconfigs[item] }}"
 
     - block:
       - name: Wait for spine gateway VM creation
@@ -259,28 +359,28 @@
     - name: Add spine gateway VM host
       add_host:
         name: spine
-        ansible_host: "{{ spine_external_port.address }}"
+        ansible_host: "{{ spine_external_port.ip_address }}"
         ansible_user: cloud-user
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         groups:
         - gateways
 
     - name: Add leaf gateway VM hosts
       add_host:
-        name: "{{ item.name }}"
-        ansible_host: "{{ item.patch_cidr | ansible.utils.nthhost(4) }}"
+        name: "{{ item.key }}"
+        ansible_host: "{{ leaf_patch_ports[item.key].ip_address }}"
         ansible_user: cloud-user
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.address }}"'
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.ip_address }}"'
         groups:
         - gateways
         - leaves
-      loop: "{{ leaves }}"
+      loop: "{{ leaves | dict2items }}"
 
     - debug:
-        msg: "Log into spine gateway VM on {{ spine_external_port.address }}"
+        msg: "Log into spine gateway VM on {{ spine_external_port.ip_address }}"
 
 - hosts: gateways
   gather_facts: false
-  strategy: free
 
   tasks:
     - name: Wait for the host to be up and ssh available
@@ -298,8 +398,17 @@
         name: iptables
         state: present
 
-    - name: Configure masquerading
-      shell: "iptables -t nat -A POSTROUTING -o {{ ansible_facts.default_ipv4.interface }} -j SNAT --to {{ ansible_facts.default_ipv4.address }}"
+    - name: Configure SNAT on the spine
+      ansible.builtin.iptables:
+        table: nat
+        chain: POSTROUTING
+        jump: SNAT
+        to_source: "{{ ansible_facts.default_ipv4.address }}"
+
+    - name: Persist SNAT rule
+      community.general.iptables_state:
+        state: saved
+        path: /etc/sysconfig/iptables
 
     - name: set IPv4 forwarding
       sysctl:
@@ -327,7 +436,7 @@
         sysctl_file: /etc/sysctl.d/90-network.conf
         state: present
         reload: yes
-  
+
     - name: set IPv6 forwarding
       sysctl:
         name: net.ipv6.conf.all.forwarding
@@ -350,7 +459,7 @@
       ansible.builtin.package:
         name: frr
         state: present
-    
+
     - name: enable FRR BGP daemon
       ansible.builtin.lineinfile:
         path: /etc/frr/daemons
@@ -359,7 +468,7 @@
         owner: frr
         group: frr
         mode: '640'
-  
+
     - name: enable FRR BFD daemon
       ansible.builtin.lineinfile:
         path: /etc/frr/daemons

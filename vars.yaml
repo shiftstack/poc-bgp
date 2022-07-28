@@ -4,15 +4,13 @@ external_network: provider_net_shared_2
 keypair: emacchi # todo: replace this with a more flexible way
 image: CentOS-Stream-GenericCloud-9-20220606.0.x86_64
 flavor: ci.m1.small
-dns_nameservers:
-- 10.2.32.1
 leaves:
-  - name: rack1
+  rack1:
     cidr: 192.168.10.0/24
-    patch_cidr: 192.168.0.0/29
-  - name: rack2
+    patch_cidr: 192.168.0.0/30
+  rack2:
     cidr: 192.168.20.0/24
-    patch_cidr: 192.168.0.8/29
-  - name: rack3
+    patch_cidr: 192.168.0.4/30
+  rack3:
     cidr: 192.168.30.0/24
-    patch_cidr: 192.168.0.16/29
+    patch_cidr: 192.168.0.8/30

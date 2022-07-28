@@ -5,18 +5,12 @@
     - name: Load variables
       ansible.builtin.include_vars: vars.yaml
 
-    - name: Delete the spine gateway VM
-      openstack.cloud.server:
-        cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-spine-gateway"
-        state: absent
-
     - name: Delete all gateway VMs
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
-        name: "{{ instance_name }}-{{ item.name }}-gateway"
+        name: "{{ instance_name }}-{{ item }}-gateway"
         state: absent
-      loop: "{{ leaves }}"
+      loop: "{{ [ 'spine' ] + (leaves.keys() | list) }}"
       async: 600
       poll: 0
       register: delete_vms
@@ -29,18 +23,18 @@
         loop_var: delete_vm
       register: job_result
       until: job_result.finished
-      retries: 30
-      delay: 20
+      retries: 60
+      delay: 10
 
     - name: Delete resources for leaf networks
       include_tasks: teardown_network.yaml
-      loop: "{{ leaves }}"
+      loop: "{{ leaves.keys() | list }}"
       vars:
         network_type: leaf
 
     - name: Delete resources for patch networks
       include_tasks: teardown_network.yaml
-      loop: "{{ leaves }}"
+      loop: "{{ leaves.keys() | list }}"
       vars:
         network_type: patch
 

@@ -1,19 +1,19 @@
 ---
-- name: Fetch {{ item.name }} network
+- name: Fetch {{ item }} network
   openstack.cloud.networks_info:
     cloud: "{{ cloud_name }}"
-    name: "{{ instance_name }}-{{ item.name }}-{{ network_type }}"
+    name: "{{ instance_name }}-{{ item }}-{{ network_type }}"
   register: network_result
 
 - block:
-  - name: List ports on {{ item.name }} network
+  - name: List ports on {{ item }} network
     openstack.cloud.port_info:
       cloud: "{{ cloud_name }}"
       filters:
         network_id: "{{ network_result.openstack_networks[0].id }}"
     register: ports_result
 
-  - name: Delete ports on {{ item.name }} network
+  - name: Delete ports on {{ item }} network
     openstack.cloud.port:
       cloud: "{{ cloud_name }}"
       name: "{{ port.name }}"
@@ -23,9 +23,9 @@
     loop_control:
       loop_var: port
 
-  - name: Delete {{ item.name }} network
+  - name: Delete {{ item }} network
     openstack.cloud.network:
       cloud: "{{ cloud_name }}"
-      name: "{{ instance_name }}-{{ item.name }}-{{ network_type }}"
+      name: "{{ instance_name }}-{{ item }}-{{ network_type }}"
       state: absent
   when: network_result.openstack_networks|length > 0
