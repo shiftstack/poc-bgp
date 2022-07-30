@@ -410,6 +410,18 @@
         state: saved
         path: /etc/sysconfig/iptables
 
+    - name: Install iptables-services
+      ansible.builtin.package:
+        name: iptables-services
+        state: present
+
+    - name: enable and start IPtables
+      become: true
+      ansible.builtin.service:
+        name: iptables
+        enabled: yes
+        state: restarted
+
     - name: set IPv4 forwarding
       sysctl:
         name: net.ipv4.ip_forward
