@@ -224,8 +224,6 @@
           addresses:
           - "{{ item.value.ip_address }}/{{ leaves[item.key].patch_cidr | ansible.utils.ipaddr('prefix') }}"
           dhcp4: false
-          # TODO: Find some way to disable gateway creation here, or we have to
-          # remove it from /etc/sysconfig/network-scripts/ifcfg-eth? later
       loop: "{{ spine_patch_ports | dict2items }}"
 
     - name: Construct network cloud-init for spine gateway VM
@@ -263,14 +261,6 @@
                   nameservers:
                     addresses: "{{ external_subnet.dns_nameservers }}"
                   dhcp4: false
-                leaf:
-                  match:
-                    macaddress: "{{ leaf_ports[item].mac_address }}"
-                  addresses:
-                  - "{{ leaf_ports[item].ip_address }}/{{ leaves[item].cidr | ansible.utils.ipaddr('prefix') }}"
-                  dhcp4: false
-                # TODO: Find some way to disable gateway creation here, or we have to
-                # remove it from /etc/sysconfig/network-scripts/ifcfg-eth? later
       loop: "{{ leaves.keys() | list }}"
 
     - name: Create the spine gateway VM
@@ -393,6 +383,28 @@
   become: true
 
   tasks:
+    - name: Disable the default routes that we don't want from cloud-init
+      ignore_errors: true
+      shell: |
+        #!/bin/bash
+        for i in /etc/sysconfig/network-scripts/ifcfg-eth*; do
+          if ! egrep -q "BOOTPROTO=dhcp" $i; then
+            if egrep -q "DEFROUTE" $i; then
+              sed -i 's,^\(DEFROUTE[ ]*=\).*,\1'no',g' $i
+              rc=1
+            else
+              echo "DEFROUTE=no">>$i
+              rc=1
+            fi
+          fi
+        done
+        exit $rc
+      register: disable_routes
+
+    - name: Reboot the machine if default routes have changed
+      ansible.builtin.reboot:
+      when: disable_routes.rc == 1
+
     - name: Install IPtables
       ansible.builtin.package:
         name: iptables
@@ -430,6 +442,35 @@
         sysctl_file: /etc/sysctl.d/90-network.conf
         state: present
         reload: yes
+
+- hosts: leaves
+  gather_facts: false
+  become: true
+
+  tasks:
+    # Leaf networks have DHCP enabled so we need to disable their default route
+    # since we can't use cloud-init to manually configure the interface.
+    - name: Disable the default routes that we don't want from cloud-init
+      ignore_errors: true
+      shell: |
+        #!/bin/bash
+        for i in /etc/sysconfig/network-scripts/ifcfg-eth*; do
+          if egrep -q "BOOTPROTO=dhcp" $i; then
+            if egrep -q "DEFROUTE" $i; then
+              sed -i 's,^\(DEFROUTE[ ]*=\).*,\1'no',g' $i
+              rc=1
+            else
+              echo "DEFROUTE=no">>$i
+              rc=1
+            fi
+          fi
+        done
+        exit $rc
+      register: disable_routes
+
+    - name: Reboot the machine if default routes have changed
+      ansible.builtin.reboot:
+      when: disable_routes.rc == 1
 
 - hosts: gateways
   gather_facts: true
