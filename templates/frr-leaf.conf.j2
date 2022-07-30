@@ -1,0 +1,66 @@
+hostname {{ ansible_hostname }}
+
+log file /var/log/frr/frr.log
+service integrated-vtysh-config
+line vty
+frr version 7.0
+
+debug bfd peer
+debug bfd network
+debug bfd zebra
+
+debug bgp graceful-restart
+debug bgp neighbor-events
+debug bgp updates
+debug bgp update-groups
+
+
+router bgp 64999
+  bgp log-neighbor-changes
+  bgp graceful-shutdown
+
+  neighbor downlink peer-group
+  neighbor downlink remote-as internal
+  neighbor downlink bfd
+  neighbor downlink bfd profile openshift
+  neighbor downlink password f00barZ
+  ! neighbor downlink capability extended-nexthop
+  neighbor eth1 interface peer-group downlink
+
+  neighbor uplink peer-group
+  neighbor uplink remote-as external
+  neighbor uplink bfd
+  neighbor uplink bfd profile openshift
+  ! neighbor uplink capability extended-nexthop
+  neighbor eth0 interface peer-group uplink
+
+  address-family ipv4 unicast
+    redistribute connected
+    neighbor downlink route-reflector-client
+    neighbor downlink default-originate
+    neighbor uplink allowas-in origin
+  exit-address-family
+
+  address-family ipv6 unicast
+    redistribute connected
+    neighbor downlink activate
+    neighbor downlink route-reflector-client
+    neighbor downlink default-originate
+    neighbor uplink activate
+    neighbor uplink allowas-in origin
+  exit-address-family
+
+  address-family l2vpn evpn
+    neighbor uplink activate
+    neighbor uplink allowas-in origin
+    neighbor downlink activate
+    neighbor downlink route-reflector-client
+  exit-address-family
+
+ip nht resolve-via-default
+
+bfd
+  profile openshift
+    detect-multiplier 10
+    transmit-interval 500
+    receive-interval 500

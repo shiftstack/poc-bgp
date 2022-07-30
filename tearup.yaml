@@ -389,7 +389,7 @@
         #!/bin/bash
         for i in /etc/sysconfig/network-scripts/ifcfg-eth*; do
           if ! egrep -q "BOOTPROTO=dhcp" $i; then
-            if egrep -q "DEFROUTE" $i; then
+            if ! egrep -q "DEFROUTE=no" $i; then
               sed -i 's,^\(DEFROUTE[ ]*=\).*,\1'no',g' $i
               rc=1
             else
@@ -456,7 +456,7 @@
         #!/bin/bash
         for i in /etc/sysconfig/network-scripts/ifcfg-eth*; do
           if egrep -q "BOOTPROTO=dhcp" $i; then
-            if egrep -q "DEFROUTE" $i; then
+            if ! egrep -q "DEFROUTE=no" $i; then
               sed -i 's,^\(DEFROUTE[ ]*=\).*,\1'no',g' $i
               rc=1
             else
@@ -531,9 +531,34 @@
         group: frr
         mode: '640'
 
+- hosts: spine
+  gather_facts: true
+  become: true
+
+  tasks:
     - name: configure FRR
       ansible.builtin.template:
-        src: ./templates/frr.conf.j2
+        src: ./templates/frr-spine.conf.j2
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: '640'
+
+    - name: enable and start FRR
+      become: true
+      ansible.builtin.service:
+        name: frr
+        enabled: yes
+        state: restarted
+
+- hosts: leaves
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: configure FRR
+      ansible.builtin.template:
+        src: ./templates/frr-leaf.conf.j2
         dest: /etc/frr/frr.conf
         owner: frr
         group: frr
