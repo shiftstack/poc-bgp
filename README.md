@@ -11,17 +11,17 @@ It is opinionated and is being used to prototype an environment where OpenShift 
 
 ## How to deploy
 
-1. Create `localvars.yaml` file and put your environment specicics, like `cloud_name`, etc.
+1. (Optional) Create `localvars.yaml` file and put your environment specicics, like `cloud_name`, etc.
 
 2. Run the following command:
 
 ```bash
-ansible-playbook tearup.yaml --extra-vars @localvars.yaml
+make deploy
 ```
 
 
 ## How to undeploy
 
 ```
-ansible-playbook teardown.yaml --extra-vars @localvars.yaml
+make undeploy
 ```
