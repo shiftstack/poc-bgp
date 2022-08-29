@@ -91,6 +91,89 @@
       when: external_subnet is not defined
 
     - block:
+      - name: Create VIPs network
+        openstack.cloud.network:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-vips"
+        register: vips_network_result
+
+      - name: Cache VIPs network
+        set_fact:
+          vips_network: "{{ vips_network_result.network }}"
+          cacheable: true
+      when: vips_network is not defined
+
+    - block:
+      - name: Create VIPs subnet
+        openstack.cloud.subnet:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-vips-subnet"
+          network_name: "{{ vips_network.name }}"
+          cidr: "{{ vips_subnet_cidr }}"
+          enable_dhcp: yes
+        register: vips_subnet_result
+
+      - name: Cache VIPs subnet
+        set_fact:
+          vips_subnet: "{{ vips_subnet_result.subnet }}"
+          cacheable: true
+      when: vips_subnet is not defined
+
+    - block:
+      - name: Create VIPs router
+        openstack.cloud.router:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-vips-router"
+          network: "{{ external_network }}"
+          interfaces:
+            - "{{ vips_subnet.id }}"
+        register: vips_router_result
+
+      - name: Cache VIPs router
+        set_fact:
+          vips_router: "{{ vips_router_result.router }}"
+          cacheable: true
+      when: vips_router is not defined
+
+    - block:
+      - name: Create VM ports on VIPs network
+        openstack.cloud.port:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-{{ item.key }}-vips-port"
+          network: "{{ vips_network.id }}"
+          port_security_enabled: false
+        loop: "{{ leaves | dict2items }}"
+        register: vips_ports_result
+
+      - name: Cache vips ports
+        set_fact:
+          vips_ports: "{{ dict(vips_ports_result.results | map('json_query', port_struct_map_query) | list) }}"
+          cacheable: true
+      when: vips_ports is not defined
+
+    - block:
+      - name: Prepare static routes
+        set_fact:
+          static_routes: >-
+            {{ leaves
+               | combine(vips_ports, recursive=True)
+               | community.general.json_query('*.{destination: cidr, nexthop: ip_address}')
+            }}
+
+      - name: Set static routes to leaf subnets on VIPs subnet
+        openstack.cloud.subnet:
+          cloud: "{{ cloud_name }}"
+          state: present
+          name: "{{ instance_name }}-vips-subnet"
+          network_name: "{{ vips_network.name }}"
+          cidr: "{{ vips_subnet_cidr }}"
+          enable_dhcp: yes
+          host_routes: "{{ static_routes }}"
+
+    - block:
       - name: Create patch networks
         openstack.cloud.network:
           cloud: "{{ cloud_name }}"
@@ -261,6 +344,10 @@
                   nameservers:
                     addresses: "{{ external_subnet.dns_nameservers }}"
                   dhcp4: false
+                vips:
+                  match:
+                    macaddress: "{{ vips_ports[item].mac_address }}"
+                  dhcp4: true
       loop: "{{ leaves.keys() | list }}"
 
     - name: Create the spine gateway VM
@@ -296,7 +383,8 @@
         key_name: "{{ keypair | mandatory }}"
         flavor: "{{ flavor }}"
         nics: "{{ [ {'port-id': leaf_patch_ports[item].id },
-                    {'port-id': leaf_ports[item].id } ] }}"
+                    {'port-id': leaf_ports[item].id },
+                    {'port-id': vips_ports[item].id } ] }}"
         auto_ip: false
         security_groups: []
         userdata: |
