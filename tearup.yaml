@@ -113,6 +113,8 @@
           network_name: "{{ vips_network.name }}"
           cidr: "{{ vips_subnet_cidr }}"
           enable_dhcp: yes
+          allocation_pool_start: "{{ vips_subnet_cidr | ansible.utils.nthhost(20) }}"
+          allocation_pool_end: "{{ vips_subnet_cidr | ansible.utils.nthhost(-1) }}"
         register: vips_subnet_result
 
       - name: Cache VIPs subnet
@@ -172,6 +174,8 @@
           cidr: "{{ vips_subnet_cidr }}"
           enable_dhcp: yes
           host_routes: "{{ static_routes }}"
+          allocation_pool_start: "{{ vips_subnet_cidr | ansible.utils.nthhost(20) }}"
+          allocation_pool_end: "{{ vips_subnet_cidr | ansible.utils.nthhost(-1) }}"
 
     - block:
       - name: Create patch networks
