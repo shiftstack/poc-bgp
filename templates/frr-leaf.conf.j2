@@ -16,16 +16,16 @@ debug bgp update-groups
 
 
 router bgp 64999
+  bgp router-id {{ leaves[inventory_hostname].cidr | ansible.utils.nthhost(1) }}
   bgp log-neighbor-changes
   bgp graceful-shutdown
 
   neighbor downlink peer-group
-  neighbor downlink remote-as internal
+  neighbor downlink remote-as external
   neighbor downlink bfd
   neighbor downlink bfd profile openshift
   neighbor downlink password f00barZ
-  ! neighbor downlink capability extended-nexthop
-  neighbor eth1 interface peer-group downlink
+  bgp listen range {{ leaves[inventory_hostname].cidr }} peer-group downlink
 
   neighbor uplink peer-group
   neighbor uplink remote-as external
@@ -36,25 +36,20 @@ router bgp 64999
 
   address-family ipv4 unicast
     redistribute connected
-    neighbor downlink route-reflector-client
-    neighbor downlink default-originate
     neighbor uplink allowas-in origin
   exit-address-family
 
   address-family ipv6 unicast
     redistribute connected
     neighbor downlink activate
-    neighbor downlink route-reflector-client
-    neighbor downlink default-originate
     neighbor uplink activate
     neighbor uplink allowas-in origin
   exit-address-family
 
   address-family l2vpn evpn
+    neighbor downlink activate
     neighbor uplink activate
     neighbor uplink allowas-in origin
-    neighbor downlink activate
-    neighbor downlink route-reflector-client
   exit-address-family
 
 ip nht resolve-via-default
