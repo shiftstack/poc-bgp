@@ -5,6 +5,17 @@
     - name: Load variables
       ansible.builtin.include_vars: vars.yaml
 
+    - name: Delete all VIP VMs
+      openstack.cloud.server:
+        cloud: "{{ cloud_name }}"
+        name: "{{ instance_name }}-{{ item }}-vip-vm"
+        state: absent
+      loop: "{{ (leaves.keys() | list) }}"
+      async: 600
+      poll: 0
+      register: delete_vms
+      when: vip_enabled
+
     - name: Delete all gateway VMs
       openstack.cloud.server:
         cloud: "{{ cloud_name }}"
@@ -15,7 +26,7 @@
       poll: 0
       register: delete_vms
 
-    - name: Wait for gateway VM deletion
+    - name: Wait for gateway VMs deletion
       async_status:
         jid: "{{ delete_vm.ansible_job_id }}"
       loop: "{{ delete_vms.results }}"
