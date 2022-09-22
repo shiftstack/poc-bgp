@@ -15,41 +15,30 @@ debug bgp updates
 debug bgp update-groups
 
 
-router bgp 64999
-  bgp router-id {{ leaves[leaf].cidr | ansible.utils.nthhost(1) }}
+router bgp 64998
+  bgp router-id {{ leaves[leaf].cidr | ansible.utils.nthhost(2) }}
   bgp log-neighbor-changes
   bgp graceful-shutdown
-
-  neighbor downlink peer-group
-  neighbor downlink remote-as external
-  neighbor downlink bfd
-  neighbor downlink bfd profile openshift
-  neighbor downlink password f00barZ
-  bgp listen range {{ leaves[leaf].cidr }} peer-group downlink
+  no bgp ebgp-requires-policy
 
   neighbor uplink peer-group
   neighbor uplink remote-as external
   neighbor uplink bfd
   neighbor uplink bfd profile openshift
-  ! neighbor uplink capability extended-nexthop
-  neighbor eth0 interface peer-group uplink
+  neighbor uplink password f00barZ
+  neighbor {{ leaves[leaf].cidr | ansible.utils.nthhost(1) }} peer-group uplink
 
   address-family ipv4 unicast
-    redistribute connected
-    neighbor uplink allowas-in origin
+    redistribute connected route-map vip
   exit-address-family
 
   address-family ipv6 unicast
-    redistribute connected
-    neighbor downlink activate
+    redistribute connected route-map vip
     neighbor uplink activate
-    neighbor uplink allowas-in origin
   exit-address-family
 
   address-family l2vpn evpn
-    neighbor downlink activate
     neighbor uplink activate
-    neighbor uplink allowas-in origin
   exit-address-family
 
 ip nht resolve-via-default
@@ -59,3 +48,8 @@ bfd
     detect-multiplier 10
     transmit-interval 500
     receive-interval 500
+
+access-list 7 seq 10 permit {{ vip }}/32
+
+route-map vip permit 1
+  match ip address 7

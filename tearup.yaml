@@ -357,10 +357,11 @@
 
     - name: Add leaf gateway VM hosts
       add_host:
-        name: "{{ item.key }}"
+        name: "{{ item.key }}-leaf"
         ansible_host: "{{ leaf_patch_ports[item.key].ip_address }}"
         ansible_user: cloud-user
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.ip_address }}"'
+        leaf: "{{ item.key }}"
         groups:
         - gateways
         - leaves
@@ -368,6 +369,73 @@
 
     - debug:
         msg: "Log into spine gateway VM on {{ spine_external_port.ip_address }}"
+
+    - name: Create VIP VMs
+      when: vip_enabled
+      block:
+      - block:
+        - name: Create VIP VM ports on leaf networks
+          openstack.cloud.port:
+            cloud: "{{ cloud_name }}"
+            name: "{{ instance_name }}-{{ item.key }}-vm-vip-port"
+            network: "{{ leaf_networks[item.key] }}"
+            fixed_ips:
+              - ip_address: "{{ item.value.cidr | ansible.utils.nthhost(2) }}"
+            port_security_enabled: false
+          loop: "{{ leaves | dict2items }}"
+          register: leaf_vm_vip_ports_result
+
+        - name: Cache VIP VM ports
+          set_fact:
+            leaf_vm_vip_ports: "{{ dict(leaf_vm_vip_ports_result.results | map('json_query', port_struct_map_query) | list) }}"
+            cacheable: true
+        when: leaf_vm_vip_ports is not defined
+
+      - name: Create the VIP VMs
+        openstack.cloud.server:
+          cloud: "{{ cloud_name }}"
+          name: "{{ instance_name }}-{{ item }}-vip-vm"
+          image: "{{ image }}"
+          key_name: "{{ keypair | mandatory }}"
+          flavor: "{{ flavor }}"
+          nics: "{{ [ {'port-id': leaf_vm_vip_ports[item].id } ] }}"
+          auto_ip: false
+          security_groups: []
+          timeout: 600
+        loop: "{{ leaves.keys() | list }}"
+        async: 600
+        poll: 0
+        register: vip_vm_create
+        when: vip_vms is not defined
+
+      - block:
+        - name: Wait for VIP VMs creation
+          async_status:
+            jid: "{{ async_result_item.ansible_job_id }}"
+          loop: "{{ vip_vm_create.results }}"
+          loop_control:
+            loop_var: async_result_item
+          register: vip_vm_create_result
+          until: vip_vm_create_result.finished
+          retries: 60
+          delay: 10
+
+        - name: Cache VIP VMs
+          set_fact:
+            vip_vms: '{{ dict(vip_vm_create_result.results | map("json_query", "[async_result_item.item.name, openstack]") | list) }}'
+            cacheable: true
+        when: vip_vms is not defined
+
+      - name: Add VIP VM hosts
+        add_host:
+          name: "{{ item.key }}-vip"
+          ansible_host: "{{ leaf_vm_vip_ports[item.key].ip_address }}"
+          ansible_user: cloud-user
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.ip_address }}"'
+          leaf: "{{ item.key }}"
+          groups:
+          - vips
+        loop: "{{ leaves | dict2items }}"
 
 - hosts: gateways
   gather_facts: false
@@ -545,11 +613,16 @@
         mode: '640'
 
     - name: enable and start FRR
-      become: true
       ansible.builtin.service:
         name: frr
         enabled: yes
         state: restarted
+
+    # Use Layer 4 for load-balancing
+    - ansible.posix.sysctl:
+        name: net.ipv4.fib_multipath_hash_policy
+        value: '1'
+        state: present
 
 - hosts: leaves
   gather_facts: true
@@ -570,3 +643,62 @@
         name: frr
         enabled: yes
         state: restarted
+
+- hosts: vips
+  gather_facts: false
+
+  tasks:
+    - name: Wait for the host to be up and ssh available
+      wait_for_connection:
+        delay: 20
+        timeout: 300
+
+- hosts: vips
+  gather_facts: true
+  strategy: free
+  become: true
+
+  tasks:
+    - name: Load variables
+      ansible.builtin.include_vars: vars.yaml
+
+    - name: Install frr
+      ansible.builtin.package:
+        name: frr
+        state: present
+
+    - name: enable FRR BGP daemon
+      ansible.builtin.lineinfile:
+        path: /etc/frr/daemons
+        regexp: "^bgpd="
+        line: "bgpd=yes"
+        owner: frr
+        group: frr
+        mode: '640'
+
+    - name: enable FRR BFD daemon
+      ansible.builtin.lineinfile:
+        path: /etc/frr/daemons
+        regexp: "^bfdd="
+        line: "bfdd=yes"
+        owner: frr
+        group: frr
+        mode: '640'
+    - name: configure FRR
+      ansible.builtin.template:
+        src: ./templates/frr-vip.conf.j2
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: '640'
+
+    - name: enable and start FRR
+      ansible.builtin.service:
+        name: frr
+        enabled: yes
+        state: restarted
+
+    - name: create the VIP
+      shell: |
+        #!/bin/bash
+        ip address add {{ vip}} dev lo
