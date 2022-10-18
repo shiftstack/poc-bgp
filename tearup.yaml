@@ -350,7 +350,7 @@
       add_host:
         name: spine
         ansible_host: "{{ spine_external_port.ip_address }}"
-        ansible_user: cloud-user
+        ansible_user: "{{ image_default_user }}"
         ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         groups:
         - gateways
@@ -359,8 +359,8 @@
       add_host:
         name: "{{ item.key }}-leaf"
         ansible_host: "{{ leaf_patch_ports[item.key].ip_address }}"
-        ansible_user: cloud-user
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.ip_address }}"'
+        ansible_user: "{{ image_default_user }}"
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p {{ image_default_user}}@{{ spine_external_port.ip_address }}"'
         leaf: "{{ item.key }}"
         groups:
         - gateways
@@ -430,8 +430,8 @@
         add_host:
           name: "{{ item.key }}-vip"
           ansible_host: "{{ leaf_vm_vip_ports[item.key].ip_address }}"
-          ansible_user: cloud-user
-          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p cloud-user@{{ spine_external_port.ip_address }}"'
+          ansible_user: "{{ image_default_user }}"
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p {{ image_default_user}}@{{ spine_external_port.ip_address }}"'
           leaf: "{{ item.key }}"
           groups:
           - vips
