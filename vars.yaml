@@ -3,6 +3,7 @@ instance_name: poc-bgp
 external_network: provider_net_shared_2
 keypair: emacchi # todo: replace this with a more flexible way
 image: CentOS-Stream-GenericCloud-9-20220606.0.x86_64
+image_default_user: cloud-user
 flavor: ci.m1.small
 vip_enabled: false
 vip: 192.168.100.1
