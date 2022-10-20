@@ -342,7 +342,7 @@
 
       - name: Cache leaf gateway VMs
         set_fact:
-          leaf_vms: '{{ dict(leaf_vm_create_result.results | map("json_query", "[async_result_item.item.name, openstack]") | list) }}'
+          leaf_vms: '{{ dict(leaf_vm_create_result.results | map("json_query", "[async_result_item.item, openstack]") | list) }}'
           cacheable: true
       when: leaf_vms is not defined
 
