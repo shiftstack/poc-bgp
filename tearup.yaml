@@ -576,6 +576,16 @@
         state: present
         reload: yes
 
+    - name: disable send_redirects
+      sysctl:
+        # eth1 is the gateway interface for leaf hosts
+        name: net.ipv4.conf.eth1.send_redirects
+        value: '0'
+        sysctl_set: yes
+        sysctl_file: /etc/sysctl.d/90-network.conf
+        state: present
+        reload: yes
+
     - name: Install frr
       ansible.builtin.package:
         name: frr
