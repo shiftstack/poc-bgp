@@ -168,7 +168,71 @@
         loop: "{{ leaves.keys() | list }}"
         register: leaf_networks_result
 
-      - name: Cache leaf networks
+      # The following works round an MTU issue when the default MTU of a
+      # neutron network is greater than the MTU of the external network. There
+      # may be other ways to solve this via packet fragmentation or MTU
+      # detection, but here we simply ensure that the leaf network MTU is no
+      # larger than the MTU of the external network. This ensure that no packet
+      # fragmentation is required for external traffic.
+      #
+      # Ideally we would do this when creating the leaf networks, but we we
+      # don't know the capabilities of the underlying network and there's no
+      # way to find out directly. Here we simply trust that the cloud operator
+      # has set the default value of a newly created network correctly and use
+      # that. We change it only if it's too big: we must not make it bigger
+      # than the default as that's likely to be broken.
+
+      - name: Fetch details of the external network
+        openstack.cloud.networks_info:
+          cloud: "{{ cloud_name }}"
+          filters:
+            name: "{{ external_network }}"
+        register: external_network_info
+
+      - name: Extract external network MTU
+        set_fact:
+          external_network_mtu: '{{ external_network_info.openstack_networks[0].mtu }}'
+
+      - name: Fetch details of the leaf networks
+        openstack.cloud.networks_info:
+          cloud: "{{ cloud_name }}"
+          filters:
+            id: "{{ item }}"
+        loop: "{{ leaf_networks_result.results | map('json_query', 'id') }}"
+        register: leaf_networks_info
+
+      - name: Extract leaf network MTU
+        set_fact:
+          leaf_network_mtu: "{{ leaf_networks_info.results | map('json_query', 'openstack_networks[0].mtu') | min }}"
+
+      - block:
+        # openstack.cloud.network won't update an existing network, so if we
+        # have to update MTU we need to delete them 🤦
+        - name: Delete leaf networks
+          openstack.cloud.network:
+            cloud: "{{ cloud_name }}"
+            state: absent
+            name: "{{ instance_name }}-{{ item }}-leaf"
+          loop: "{{ leaves.keys() | list }}"
+
+        - name: Recreate leaf networks with correct MTU
+          openstack.cloud.network:
+            cloud: "{{ cloud_name }}"
+            state: present
+            name: "{{ instance_name }}-{{ item }}-leaf"
+            mtu_size: "{{ external_network_mtu }}"
+          loop: "{{ leaves.keys() | list }}"
+          register: recreated_leaf_networks_result
+
+        - name: Cache recreated leaf networks
+          set_fact:
+            leaf_networks: '{{ dict(recreated_leaf_networks_result.results | map("json_query", "[item, id]") | list) }}'
+            cacheable: true
+        when: external_network_mtu < leaf_network_mtu
+
+      # This will be skipped if we defined leaf_networks above due to the block
+      # condition
+      - name: Cache original leaf networks
         set_fact:
           leaf_networks: '{{ dict(leaf_networks_result.results | map("json_query", "[item, id]") | list) }}'
           cacheable: true
