@@ -640,9 +640,26 @@
         state: present
         reload: yes
 
-    - name: disable send_redirects
+    # Source: https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
+    # send_redirects - BOOLEAN
+    # 	Send redirects, if router.
+    # 	send_redirects for the interface will be enabled if at least one of
+    # 	conf/{all,interface}/send_redirects is set to TRUE,
+    # 	it will be disabled otherwise
+    # 	Default: TRUE
+    #
+    # So we have to disable it for 'all' and the leaf gateway, 'eth1'.
+    - name: disable net.ipv4.conf.all.send_redirects
       sysctl:
-        # eth1 is the gateway interface for leaf hosts
+        name: net.ipv4.conf.all.send_redirects
+        value: '0'
+        sysctl_set: yes
+        sysctl_file: /etc/sysctl.d/90-network.conf
+        state: present
+        reload: yes
+
+    - name: disable net.ipv4.conf.eth1.send_redirects
+      sysctl:
         name: net.ipv4.conf.eth1.send_redirects
         value: '0'
         sysctl_set: yes
