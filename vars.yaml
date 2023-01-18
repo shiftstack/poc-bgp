@@ -6,7 +6,9 @@ image: CentOS-Stream-GenericCloud-9-20220606.0.x86_64
 image_default_user: cloud-user
 flavor: ci.m1.small
 vip_enabled: false
-vip: 192.168.100.1
+vips:
+ - 192.168.100.1
+ - 192.168.100.2
 leaves:
   rack1:
     cidr: 192.168.10.0/24

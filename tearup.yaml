@@ -795,7 +795,24 @@
         enabled: yes
         state: restarted
 
-    - name: create the VIP
+    - name: create the VIPs
       shell: |
         #!/bin/bash
-        ip address add {{ vip}} dev lo
+        ip address add {{ item }} dev lo
+        ip rule add from {{ item }} to {{ ansible_facts.default_ipv4.network }}/{{ (ansible_facts.default_ipv4.address + '/' + ansible_facts.default_ipv4.netmask) | ipaddr('prefix') }} lookup 999
+      loop: "{{ vips }}"
+
+    - name: Configure routing for the VIPs
+      shell: |
+        #!/bin/bash
+        ip route add default via {{ ansible_facts.default_ipv4.gateway }} table 999
+
+    - name: Install HAproxy
+      ansible.builtin.package:
+        name: haproxy
+        state: present
+
+    - name: Put SELinux in permissive mode, logging actions that would be blocked.
+      ansible.posix.selinux:
+        policy: targeted
+        state: permissive
