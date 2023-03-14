@@ -547,6 +547,7 @@
         table: nat
         chain: POSTROUTING
         jump: SNAT
+        out_interface: "{{ ansible_facts.default_ipv4.interface }}"
         to_source: "{{ ansible_facts.default_ipv4.address }}"
 
     - name: Persist SNAT rule
