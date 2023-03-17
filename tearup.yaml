@@ -250,7 +250,7 @@
           dns_nameservers: "{{ external_subnet.dns_nameservers }}"
           gateway_ip: "{{ item.value.cidr | ansible.utils.nthhost(1) }}"
           allocation_pool_start: "{{ item.value.cidr | ansible.utils.nthhost(10) }}"
-          allocation_pool_end: "{{ item.value.cidr | ansible.utils.nthhost(-2) }}"
+          allocation_pool_end: "{{ item.value.cidr | ansible.utils.nthhost(20) }}"
         loop: "{{ leaves | dict2items }}"
         register: leaf_subnets_result
 
